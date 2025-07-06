@@ -1,0 +1,16 @@
+discord-bot:
+  enabled: false
+  secret: # XXX-XXXX YADA YADA
+#  console-channel: #43764867365
+  whitelist-queue-channel: #43648364846
+
+timeout: 240 # seconds
+
+# if the whitelist is off, we should put the dialog entry point in the pause menu.
+# we will have to account for this in the menu logic, not all results should end in disconnect
+# (detach logic of faliure path from the whitelist form and into the respective events)
+show-in-pause-if-whitelist-off: false
+
+socials:
+  discord-invite: ''
+  student-union-page: ''

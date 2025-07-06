@@ -1,0 +1,10 @@
+name: studentUnionWhitelister
+version: '1.0-SNAPSHOT'
+main: com.github.cinnamondev.studentUnionWhitelister.SUWhitelister
+api-version: '1.21'
+
+dependencies:
+  server:
+    # we will use floodgate to determine if a player is a bedrock player or not.
+    Floodgate:
+      required: false
