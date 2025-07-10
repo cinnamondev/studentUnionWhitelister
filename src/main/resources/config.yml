@@ -1,7 +1,8 @@
 discord-bot:
+  # when disabled, we just try to send the data up through velocity with the hope that we have another instance
+  # of the plugin that does... this should allow us to put this on child servers.
   enabled: false
   secret: # XXX-XXXX YADA YADA
-#  console-channel: #43764867365
   whitelist-queue-channel: #43648364846
 
 timeout: 240 # seconds

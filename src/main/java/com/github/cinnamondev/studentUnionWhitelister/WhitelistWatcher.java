@@ -3,7 +3,7 @@ package com.github.cinnamondev.studentUnionWhitelister;
 import com.destroystokyo.paper.event.profile.ProfileWhitelistVerifyEvent;
 import com.destroystokyo.paper.profile.PlayerProfile;
 import com.github.cinnamondev.studentUnionWhitelister.dialog.WhitelistForm;
-import com.github.cinnamondev.studentUnionWhitelister.dialog.WhitelistRequest;
+import com.github.cinnamondev.studentUnionWhitelister.discord.WhitelistRequest;
 import io.papermc.paper.event.connection.configuration.AsyncPlayerConnectionConfigureEvent;
 import net.kyori.adventure.text.Component;
 import org.bukkit.event.EventHandler;
@@ -76,12 +76,37 @@ public class WhitelistWatcher implements Listener {
                         }
                     }
                     case WhitelistForm.FormResult.Complete(WhitelistRequest request) -> {
-                        p.acceptor.acceptWhitelistRequest(request).join();
-                        e.getConnection().disconnect(Component.text("thank you you will be hearing from my lawyer"));
+                        try {
+                            p.acceptor.acceptWhitelistRequest(request);
+                            e.getConnection().disconnect(Component.text("Thanks!"));
+                        } catch (Exception ex) {
+                            if (isFinalAttempt) {
+                                e.getConnection().disconnect(
+                                        Component.text("An error message was associated with this attempt:")
+                                                .appendNewline()
+                                                .append(Component.text(ex.getMessage()))
+                                );
+                            } else {
+                                boolean retry = WhitelistForm.errorDialog(
+                                        Component.text("An error message was associated with this attempt:")
+                                                .appendNewline()
+                                                .append(Component.text(ex.getMessage())),
+                                        e.getConnection().getProfile(), e.getConnection().getAudience()
+                                ).join();
+                                if (!retry) {
+                                    e.getConnection().disconnect(WhitelistForm.DISCONNECT_REASON_CANCELLED.reason());
+                                    return;
+                                } else {
+                                    restarts += 1;
+                                }
+                            }
+                        }
                         return;
                     }
                 }
             }
+            // 'just in case' we forgot to finish early somewhere, disconnect the player with a generic message.
+            e.getConnection().disconnect(WhitelistForm.DISCONNECT_REASON_CANCELLED.reason());
         }
     }
 }

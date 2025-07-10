@@ -1,9 +1,8 @@
 package com.github.cinnamondev.studentUnionWhitelister.dialog;
 
 import com.destroystokyo.paper.profile.PlayerProfile;
-import com.github.cinnamondev.studentUnionWhitelister.DiscordUsernameValidator;
 import com.github.cinnamondev.studentUnionWhitelister.SUWhitelister;
-import io.papermc.paper.connection.PlayerConnection;
+import com.github.cinnamondev.studentUnionWhitelister.discord.WhitelistRequest;
 import io.papermc.paper.dialog.Dialog;
 import io.papermc.paper.registry.data.dialog.ActionButton;
 import io.papermc.paper.registry.data.dialog.DialogBase;
@@ -28,12 +27,11 @@ import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.geysermc.floodgate.api.FloodgateApi;
 
-import javax.annotation.Nullable;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -89,33 +87,9 @@ public class WhitelistForm {
                     .hoverEvent(HoverEvent.showText(Component.text("i.e. jpromptig")))
     ).labelVisible(true).maxLength(64).build();
 
-    protected static SingleOptionDialogInput IS_JAVA_OR_BEDROCK = DialogInput.singleOption(
-            "platform",
-            Component.text("Platform: "),
-            List.of(
-                    SingleOptionDialogInput.OptionEntry.create("java", Component.text("I play on Java Edition!"), true),
-                    SingleOptionDialogInput.OptionEntry.create("java", Component.text("I play on Bedrock Edition!"), false)
-            )).build();
-
-
-
-
-    protected final List<DialogInput> dialogInputs;
     protected final SUWhitelister p;
     public WhitelistForm(SUWhitelister plugin) {
         this.p = plugin;
-        if (plugin.floodgateInstance().isPresent()) {
-            this.dialogInputs = List.of(
-                    IDENTIFIER_INPUT,
-                    DISCORD_INPUT
-            );
-        } else {
-            this.dialogInputs = List.of(
-                    IDENTIFIER_INPUT,
-                    DISCORD_INPUT,
-                    IS_JAVA_OR_BEDROCK
-            );
-        }
     }
 
     protected static ActionButton genericCancelButton(Consumer<FormResult.Failure> failureConsumer) {
@@ -129,82 +103,62 @@ public class WhitelistForm {
     public CompletableFuture<FormResult> showWhitelistPrompt(PlayerProfile profile, Audience audience, boolean allowRetry) {
         CompletableFuture<FormResult> future = new CompletableFuture<>(); // seeing as players could be coming back at any time we return a completablefuture
         AtomicBoolean tryAgain = new AtomicBoolean(true);
-        Dialog dialog = Dialog.create(b -> b.empty()
-                .type(DialogType.confirmation(
-                        ActionButton.builder(Component.text("I am registered!").color(NamedTextColor.GREEN))
-                                .action(DialogAction.customClick((r, _a) -> {
-                                    boolean success = false;
+        Dialog dialog = Dialog.create(b -> {
+                    b.empty()
+                            .type(DialogType.confirmation(
+                                    ActionButton.builder(Component.text("I am registered!").color(NamedTextColor.GREEN))
+                                            .action(DialogAction.customClick((r, _a) -> {
+                                                boolean success = false;
 
-                                    WhitelistRequest.Identifier identifier;
-                                    {
-                                        String unvalidatedIdentifier = r.getText("identifier");
-                                        FormResult.Failure failureMessage = new FormResult.Failure(Component.text(
-                                                "Could not parse student ID / email!"
-                                        ), allowRetry);
-                                        if (unvalidatedIdentifier == null) {
-                                            future.complete(failureMessage);
-                                            return;
-                                        }
-                                        unvalidatedIdentifier = unvalidatedIdentifier.strip().trim();
-                                        // lets see if we can parse for id
-                                        if (NumberUtils.isCreatable(unvalidatedIdentifier)) {
-                                            int num = NumberUtils.toInt(unvalidatedIdentifier);
-                                            if (num == 0) { future.complete(failureMessage); return; } else {
-                                                identifier = new WhitelistRequest.Identifier.StudentID(num);
-                                            }
-                                        } else if (EmailValidator
-                                                .getInstance(false, false)
-                                                .isValid(unvalidatedIdentifier)) {
-                                            identifier = new WhitelistRequest.Identifier.Email(unvalidatedIdentifier);
-                                        } else { // not email or id :(
-                                            future.complete(failureMessage);
-                                            return;
-                                        }
-                                    }
+                                                WhitelistRequest.Identifier identifier = WhitelistRequest.Identifier
+                                                        .tryFromString(Objects.requireNonNull(r.getText("identifier")));
 
-                                    String discordUsername;
-                                    {
-                                        String unvalidatedDiscord = r.getText("discord");
-                                        if (unvalidatedDiscord == null) {
-                                            future.complete(new FormResult.Failure(Component.text("missing discord username"), allowRetry));
-                                            return;
-                                        }
-                                        unvalidatedDiscord = unvalidatedDiscord.strip().trim();
-                                        // discord usernames only usually have periods and underscores. they also
-                                        // dont allow `..` etc but idrc about that at this point, just want to make
-                                        // sure its 'pretty' clean.
-                                        if (!unvalidatedDiscord.matches("^[a-zA-Z0-9_.]+")) {
-                                            future.complete(new FormResult.Failure(Component.text("Invalid Discord Username!"), allowRetry));
-                                            return;
-                                        } else {
-                                            discordUsername = unvalidatedDiscord;
-                                        }
-                                    }
+                                                // in hindsight-- the old solution made no sense! we dont have floodgate but we
+                                                // can select the options? why wouldnt we just already setup floodgate?
+                                                WhitelistRequest.Username username = p.floodgateInstance()
+                                                        .flatMap(api -> api.isFloodgatePlayer(profile.getId()) ?
+                                                                Optional.of((WhitelistRequest.Username)
+                                                                        new WhitelistRequest.Username.Bedrock(
+                                                                                Objects.requireNonNull(profile.getName()),
+                                                                                profile.getId())
+                                                                ) : Optional.empty()
+                                                        ).orElse(new WhitelistRequest.Username.Java( // when floodgate unavailable we ignore bedrock
+                                                                Objects.requireNonNull(profile.getName()),
+                                                                profile.getId()
+                                                        ));
 
-                                    boolean isJava;
-                                    if (p.floodgateInstance().isPresent()) {
-                                        FloodgateApi api = p.floodgateInstance().get();
-                                        if (p.floodgateInstance().get().isFloodgatePlayer(profile.getId())) {
-                                            isJava = false;
-                                        }
-                                    } else {
-                                        isJava = Boolean.TRUE.equals(r.getBoolean("java"));
-                                    }
+                                                // send the form data to be checked where appropriate
+                                                WhitelistRequest.tryWithMinecraft(p.bot,
+                                                        r.getText("identifier"),
+                                                        username,
+                                                        r.getText("discord")
+                                                ) // return form result success with the validated data
+                                                        .map(FormResult.Complete::new)
+                                                        .subscribe(future::complete, ex -> {
+                                                            future.complete(new FormResult.Failure(
+                                                                    Component.text(ex.getMessage()),
+                                                                    allowRetry
+                                                            ));
+                                                        });
 
-                                }, ClickCallback.Options.builder().uses(1).lifetime(Duration.of(15, ChronoUnit.MINUTES)).build()))
-                                .build(),
-                        genericCancelButton(future::complete)
-                ))
-                .base(DialogBase.builder(Component.text("Get whitelisted!"))
-                        .externalTitle(Component.text("Get whitelisted!"))
-                        .afterAction(DialogBase.DialogAfterAction.CLOSE)
-                        .body(List.of(
-                                DialogBody.plainMessage(DIALOG_MESSAGE)
-                        ))
-                        .inputs(dialogInputs)
-                        .canCloseWithEscape(false)
-                        .build()
-                )
+                                            }, ClickCallback.Options.builder().uses(1).lifetime(Duration.of(15, ChronoUnit.MINUTES)).build()))
+                                            .build(),
+                                    genericCancelButton(future::complete)
+                            ))
+                            .base(DialogBase.builder(Component.text("Get whitelisted!"))
+                                    .externalTitle(Component.text("Get whitelisted!"))
+                                    .afterAction(DialogBase.DialogAfterAction.CLOSE)
+                                    .body(List.of(
+                                            DialogBody.plainMessage(DIALOG_MESSAGE, 512)
+                                    ))
+                                    .inputs(List.of(
+                                            IDENTIFIER_INPUT,
+                                            DISCORD_INPUT
+                                    ))
+                                    .canCloseWithEscape(false)
+                                    .build()
+                            );
+                }
         );
 
         audience.showDialog(dialog);
